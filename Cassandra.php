@@ -135,13 +135,19 @@ class CassandraConnection {
 		$sendTimeoutMs = null,
 		$receiveTimeoutMs = null
 	) {
+        if(!is_string($host)) $host = '127.0.0.1';
+        if(!is_numeric($port)) $port = 9160;
+        if(!is_bool($useFramedTransport)) $useFramedTransport = true;
+        if(!is_numeric($receiveTimeoutMs)) $receiveTimeoutMs = null;
+        if(!is_numeric($sendTimeoutMs)) $sendTimeoutMs = null;
+
 		$this->host = $host;
 		$this->port = $port;
 		$this->useFramedTransport = $useFramedTransport;
 		$this->sendTimeoutMs = $sendTimeoutMs;
 		$this->receiveTimeoutMs = $receiveTimeoutMs;
 		$this->isOpen = false;
-		
+
 		$this->socket = $this->createSocket(
 			$host,
 			$port,
@@ -855,7 +861,11 @@ class Cassandra {
 	 * @param string $password Password
 	 * @return Cassandra Self for call chaining
 	 */
-	public function useKeyspace($keyspace, $username = null, $password = null) {
+	public function useKeyspace(
+        $keyspace,
+		$username = null,
+		$password = null
+	) {
 		if (!empty($username)) {
 			$this->registerKeyspace($keyspace, $username, $password);
 		} else if (isset($this->keyspaceAuthentication[$keyspace])) {
@@ -1140,7 +1150,12 @@ class Cassandra {
 	 * @param integer $consistency Consistency level, use constants, has default
 	 * @throws CassandraInvalidPatternException If equest pattern is invalid
 	 */
-	public function get($request, $consistency = null) {
+	public function get(
+        $request,
+        $consistency = null
+    ) {
+        $consistency = Cassandra::checkConsistency($consistency);
+
 		$details = $this->parseRequest($request);
 
 		return $this->cf($details['column-family'])->get(
@@ -1154,7 +1169,31 @@ class Cassandra {
 			$consistency
 		);
 	}
-	
+
+    /**
+     * Make sure we fall into the realm of a proper Consistency level
+     * @static
+     * @param integer $consistency Consistency to use, default used if not set
+     * @return int Consistency Level
+     */
+    public static function checkConsistency($consistency)
+    {
+        if(
+            !in_array(
+                $consistency,
+                array(
+                    Cassandra::CONSISTENCY_ALL,
+                    Cassandra::CONSISTENCY_ANY,
+                    Cassandra::CONSISTENCY_ONE,
+                    Cassandra::CONSISTENCY_QUORUM,
+                )
+            )
+        )
+            $consistency = Cassandra::CONSISTENCY_ONE;
+
+        return $consistency;
+    }
+
 	/**
 	 * Sets a key value. The key should include column family name as first
 	 * part before fullstop so key "user.john" would set key "john" in column
@@ -1169,7 +1208,13 @@ class Cassandra {
 	 * @param integer $consistency Consistency to use, default used if not set
 	 * @return integer Timestamp of the insterted/updated item 
 	 */
-	public function set($key, array $columns, $consistency = null) {
+	public function set(
+        $key,
+        array $columns,
+        $consistency = null
+    ) {
+        $consistency = Cassandra::checkConsistency($consistency);
+
 		$dotPosition = mb_strpos($key, '.');
 		
 		if ($dotPosition === false) {
@@ -1881,7 +1926,16 @@ class CassandraColumnFamily {
 	 * @return array Array of column names and their values
 	 * @throws Exception If something goes wrong
 	 */
-	public function getAll($key, $superColumn = null, $consistency = null) {
+	public function getAll(
+        $key,
+        $superColumn = null,
+        $consistency = null
+    ) {
+        $consistency = Cassandra::checkConsistency($consistency);
+
+        if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+        
 		return $this->get(
 			$key,
 			null,
@@ -1913,6 +1967,11 @@ class CassandraColumnFamily {
 		$superColumn = null,
 		$consistency = null
 	) {
+        $consistency = Cassandra::checkConsistency($consistency);
+
+        if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
 		return $this->get(
 			$key,
 			$columns,
@@ -1951,6 +2010,14 @@ class CassandraColumnFamily {
 		$columnCount = 100,
 		$consistency = null
 	) {
+        $consistency = Cassandra::checkConsistency($consistency);
+
+        if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
+        if(!is_numeric($columnCount))
+            $columnCount = 100;
+
 		return $this->get(
 			$key,
 			null,
@@ -2007,11 +2074,25 @@ class CassandraColumnFamily {
 				'columns for a range but not both at the same time'
 			);
 		}
-		
+
+        if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
+        if(!is_numeric($columnCount))
+            $columnCount = 100;
+
+        if(!is_array($columns) && !is_null($columns)) /* build an array for someone who is confused */
+            $columns = array($columns);
+
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
-		}
-		
+		} else {
+            $consistency = Cassandra::checkConsistency($consistency);
+        }
+
+        if(!is_bool($columnsReversed))
+            $columnsReversed = false;
+
 		$columnParent = $this->createColumnParent($superColumn);
 
 		$slicePredicate = $this->createSlicePredicate(
@@ -2093,10 +2174,27 @@ class CassandraColumnFamily {
 			);
 		}
 		
+		if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
+        if(!is_numeric($columnCount))
+            $columnCount = 100;
+
+        if(!is_array($columns) && !is_null($columns)) /* build an array for someone who is confused */
+            $columns = array($columns);
+
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
-		}
-		
+		} else {
+            $consistency = Cassandra::checkConsistency($consistency);
+        }
+
+        if(!is_bool($columnsReversed))
+            $columnsReversed = false;
+
+        if(!is_numeric($bufferSize))
+            $bufferSize = 1000;
+
 		$columnParent = $this->createColumnParent($superColumn);
 
 		$slicePredicate = $this->createSlicePredicate(
@@ -2168,10 +2266,28 @@ class CassandraColumnFamily {
 				'columns for a range but not both at the same time'
 			);
 		}
-		
+
+        if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
+        if(!is_numeric($columnCount))
+            $columnCount = 100;
+
+        if(!is_array($columns) && !is_null($columns)) /* build an array for someone who is confused */
+            $columns = array($columns);
+
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
-		}
+		} else {
+            $consistency = Cassandra::checkConsistency($consistency);
+        }
+
+        if(!is_bool($columnsReversed))
+            $columnsReversed = false;
+
+        if(!is_numeric($bufferSize))
+            $bufferSize = 512;
+
 		
 		$columnParent = $this->createColumnParent($superColumn);
 
@@ -2272,9 +2388,26 @@ class CassandraColumnFamily {
 			);
 		}
 		
+		if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
+        if(!is_numeric($columnCount))
+            $columnCount = 100;
+
+        if(!is_array($columns) && !is_null($columns)) /* build an array for someone who is confused */
+            $columns = array($columns);
+
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
-		}
+		} else {
+            $consistency = Cassandra::checkConsistency($consistency);
+        }
+
+        if(!is_bool($columnsReversed))
+            $columnsReversed = false;
+
+        if(!is_numeric($bufferSize))
+            $bufferSize = 512;
 		
 		if ($startKey === null) {
 			$startKey = '';
@@ -2334,9 +2467,17 @@ class CassandraColumnFamily {
 			);
 		}
 		
+		if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
+        if(!is_array($columns) && !is_null($columns)) /* build an array for someone who is confused */
+            $columns = array($columns);
+
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
-		}
+		} else {
+            $consistency = Cassandra::checkConsistency($consistency);
+        }
 		
 		$columnParent = $this->createColumnParent($superColumn);
 
@@ -2385,10 +2526,18 @@ class CassandraColumnFamily {
 			);
 		}
 		
+		if(!is_null($superColumn) && !is_string($superColumn))
+            $superColumn = null;
+
+        if(!is_array($columns) && !is_null($columns)) /* build an array for someone who is confused */
+            $columns = array($columns);
+
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
-		}
-		
+		} else {
+            $consistency = Cassandra::checkConsistency($consistency);
+        }
+        
 		$columnParent = $this->createColumnParent($superColumn);
 
 		$slicePredicate = $this->createSlicePredicate(
