@@ -417,6 +417,21 @@ class CassandraCluster {
 		$sendTimeoutMs = null,
 		$receiveTimeoutMs = null
 	) {
+        if(!is_string($host))
+            throw new CassandraUnsupportedException('host must be a string value');
+
+        if(!is_numeric($port))
+            throw new CassandraUnsupportedException('port must be an integer value');
+
+        if(!is_bool($useFramedTransport))
+            throw new CassandraUnsupportedException('useFramedTransport must be a boolean value');
+
+        if(!is_numeric($sendTimeoutMs) && !is_null($sendTimeoutMs))
+            throw new CassandraUnsupportedException('sendTimeoutMs must be an integer value');
+
+        if(!is_numeric($receiveTimeoutMs) && !is_null($receiveTimeoutMs))
+            throw new CassandraUnsupportedException('receiveTimeoutMs must be an integer value');
+
 		$this->servers[] = array(
 			'host' => $host,
 			'port' => $port,
@@ -436,7 +451,11 @@ class CassandraCluster {
 	 * @param string $password Password
 	 * @return CassandraCluster Self for chaining calls
 	 */
-	public function useKeyspace($keyspace, $username = null, $password = null) {
+	public function useKeyspace(
+        $keyspace,
+        $username = null,
+        $password = null
+    ){
 		$this->keyspace = $keyspace;
 		$this->username = $username;
 		$this->password = $password;
@@ -544,9 +563,8 @@ class CassandraCluster {
 	 * @return CassandraCluster Self for chaining calls
 	 */
 	public function closeConnections() {
-		foreach ($this->connections as $connection) {
+		foreach ($this->connections as $connection)
 			$connection->close();
-		}
 		
 		$this->connections = array();
 		
@@ -782,7 +800,13 @@ class Cassandra {
 	 * @param array $servers Array of server connection details.
 	 * @param type $autopack Should keys and data be autopacked.
 	 */
-	private function __construct(array $servers = array(), $autopack = true) {
+	private function __construct(
+        array $servers = array(),
+        $autopack = true
+    ) {
+        if(!is_bool($autopack))
+            throw new CassandraUnsupportedException('Autopack (arg[2]) must be a boolean value');
+
 		$this->cluster = new CassandraCluster($servers);
 		$this->autopack = $autopack;
 	}
@@ -820,7 +844,9 @@ class Cassandra {
 	 * @return Cassandra The instance
 	 * @throws CassandraInvalidRequestException If no such instance exists
 	 */
-	public static function getInstance($name = 'main') {
+	public static function getInstance(
+        $name = 'main'
+    ) {
 		if (!isset(self::$instances[$name])) {
 			throw new CassandraInvalidRequestException(
 				'Instance called "'.$name.'" does not exist'
@@ -866,9 +892,16 @@ class Cassandra {
 		$username = null,
 		$password = null
 	) {
-		if (!empty($username)) {
+
+        /* we must have a username and password combo, if we dont have a username
+         * then a password will not matter
+         */
+		if (!empty($username))
+        {
 			$this->registerKeyspace($keyspace, $username, $password);
-		} else if (isset($this->keyspaceAuthentication[$keyspace])) {
+		}
+        else if(isset($this->keyspaceAuthentication[$keyspace]))
+        {
 			$username = $this->keyspaceAuthentication[$keyspace]['username'];
 			$password = $this->keyspaceAuthentication[$keyspace]['password'];
 		}
@@ -1004,11 +1037,10 @@ class Cassandra {
 	 * @return array Keyspace description as given by Cassandra 
 	 */
 	public function describeKeyspace($keyspace = null) {
-		if ($keyspace === null) {
+		if ($keyspace === null)
 			$keyspace = $this->cluster->getCurrentKeyspace();
-		}
-		
-		return $this->call('describe_keyspace', $keyspace);
+
+            return $this->call('describe_keyspace', $keyspace);
 	}
 	
 	/**
@@ -1019,11 +1051,13 @@ class Cassandra {
 	 * @param boolean $useCache Should caching be used if possible
 	 * @return array Keyspace schema description with column families metadata 
 	 */
-	public function getKeyspaceSchema($keyspace = null, $useCache = true) {
-		if ($keyspace === null) {
+	public function getKeyspaceSchema(
+        $keyspace = null,
+        $useCache = true
+    ){
+		if ($keyspace === null)
 			$keyspace = $this->cluster->getCurrentKeyspace();
-		}
-		
+
 		$cacheKey = 'cassandra.schema|'.$keyspace;
 
 		$schema = false;
@@ -1154,7 +1188,7 @@ class Cassandra {
         $request,
         $consistency = null
     ) {
-        $consistency = Cassandra::checkConsistency($consistency);
+        $consistency = CassandraUtil::CheckConsistency($consistency);
 
 		$details = $this->parseRequest($request);
 
@@ -1169,30 +1203,6 @@ class Cassandra {
 			$consistency
 		);
 	}
-
-    /**
-     * Make sure we fall into the realm of a proper Consistency level
-     * @static
-     * @param integer $consistency Consistency to use, default used if not set
-     * @return int Consistency Level
-     */
-    public static function checkConsistency($consistency)
-    {
-        if(
-            !in_array(
-                $consistency,
-                array(
-                    Cassandra::CONSISTENCY_ALL,
-                    Cassandra::CONSISTENCY_ANY,
-                    Cassandra::CONSISTENCY_ONE,
-                    Cassandra::CONSISTENCY_QUORUM,
-                )
-            )
-        )
-            $consistency = Cassandra::CONSISTENCY_ONE;
-
-        return $consistency;
-    }
 
 	/**
 	 * Sets a key value. The key should include column family name as first
@@ -1213,7 +1223,7 @@ class Cassandra {
         array $columns,
         $consistency = null
     ) {
-        $consistency = Cassandra::checkConsistency($consistency);
+        $consistency = CassandraUtil::CheckConsistency($consistency);
 
 		$dotPosition = mb_strpos($key, '.');
 		
@@ -1931,7 +1941,7 @@ class CassandraColumnFamily {
         $superColumn = null,
         $consistency = null
     ) {
-        $consistency = Cassandra::checkConsistency($consistency);
+        $consistency = CassandraUtil::CheckConsistency($consistency);
 
         if(!is_null($superColumn) && !is_string($superColumn))
             $superColumn = null;
@@ -1967,7 +1977,7 @@ class CassandraColumnFamily {
 		$superColumn = null,
 		$consistency = null
 	) {
-        $consistency = Cassandra::checkConsistency($consistency);
+        $consistency = CassandraUtil::CheckConsistency($consistency);
 
         if(!is_null($superColumn) && !is_string($superColumn))
             $superColumn = null;
@@ -2010,7 +2020,7 @@ class CassandraColumnFamily {
 		$columnCount = 100,
 		$consistency = null
 	) {
-        $consistency = Cassandra::checkConsistency($consistency);
+        $consistency = CassandraUtil::CheckConsistency($consistency);
 
         if(!is_null($superColumn) && !is_string($superColumn))
             $superColumn = null;
@@ -2087,7 +2097,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = Cassandra::checkConsistency($consistency);
+            $consistency = CassandraUtil::CheckConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2186,7 +2196,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = Cassandra::checkConsistency($consistency);
+            $consistency = CassandraUtil::CheckConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2279,7 +2289,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = Cassandra::checkConsistency($consistency);
+            $consistency = CassandraUtil::CheckConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2400,7 +2410,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = Cassandra::checkConsistency($consistency);
+            $consistency = CassandraUtil::CheckConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2476,7 +2486,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = Cassandra::checkConsistency($consistency);
+            $consistency = CassandraUtil::CheckConsistency($consistency);
         }
 		
 		$columnParent = $this->createColumnParent($superColumn);
@@ -2535,7 +2545,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = Cassandra::checkConsistency($consistency);
+            $consistency = CassandraUtil::CheckConsistency($consistency);
         }
         
 		$columnParent = $this->createColumnParent($superColumn);
@@ -3044,16 +3054,14 @@ class CassandraUtil {
 	 * @param string $definition Definition to parse
 	 * @return string Valid data type name
 	 */
-	public static function extractType($definition) {
-		if ($definition === null or $definition == '') {
+	public static function extractType(
+        $definition
+    ){
+		if ($definition === null or $definition == '')
 			return Cassandra::TYPE_BYTES;
-		}
 
-		$index = strrpos($definition, '.');
-
-		if ($index === false) {
+		if (($index = strrpos($definition, '.')) === false)
 			return Cassandra::TYPE_BYTES;
-		}
 
 		return substr($definition, $index + 1);
 	}
@@ -3294,7 +3302,31 @@ class CassandraUtil {
 		
         return $out;
 	}
-	
+
+    /**
+     * Make sure we fall into the realm of a proper Consistency level
+     * @static
+     * @param integer $consistency Consistency to use, default used if not set
+     * @return int Consistency Level
+     */
+    public static function checkConsistency($consistency)
+    {
+        if(
+            !in_array(
+                $consistency,
+                array(
+                    Cassandra::CONSISTENCY_ALL,
+                    Cassandra::CONSISTENCY_ANY,
+                    Cassandra::CONSISTENCY_ONE,
+                    Cassandra::CONSISTENCY_QUORUM,
+                )
+            )
+        )
+            $consistency = Cassandra::CONSISTENCY_ONE;
+
+        return $consistency;
+    }
+
 	/**
 	 * Returns current timestamp that can be used in insert/update opearations.
 	 * 
