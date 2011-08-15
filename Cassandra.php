@@ -584,7 +584,14 @@ class Cassandra {
 	 * @var array 
 	 */
 	protected static $instances = array();
-	
+
+    /**
+	 * Switch for the Cassandra Profiler
+	 *
+	 * @var boolean
+	 */
+    public static $profiler = false;
+
 	/**
 	 * Array of Cassandra low-level method names that require a keyspace to
 	 * be selected. Populated as needed.
@@ -802,13 +809,16 @@ class Cassandra {
 	 */
 	private function __construct(
         array $servers = array(),
-        $autopack = true
+        $autopack = true,
+        $profiler = false
     ) {
         if(!is_bool($autopack))
             throw new CassandraUnsupportedException('Autopack (arg[2]) must be a boolean value');
 
 		$this->cluster = new CassandraCluster($servers);
 		$this->autopack = $autopack;
+        Cassandra::$profiler = $profiler;
+
 	}
 	
 	/**
@@ -833,7 +843,23 @@ class Cassandra {
 		
 		return self::$instances[$name];
 	}
-	
+
+    /**
+     * Get/Set the profiler to an on or off state
+     *
+     * @static
+     * @param bool $swt
+     * @return bool
+     */
+
+    public static function isProfiler($swt = null)
+    {
+        if(is_bool($swt))
+            Cassandra::$profiler = $swt;
+
+        return Cassandra::$profiler;
+    }
+
 	/**
 	 * Returns named singleton instance.
 	 * 
@@ -986,7 +1012,7 @@ class Cassandra {
 	public function call(/*$methodName, $arg1, $arg2 */) {
 		$args = func_get_args();
 		$methodName = array_shift($args);
-		
+
 		$tries = $this->maxCallRetries;
 		$lastException = null;
 		
@@ -1006,19 +1032,39 @@ class Cassandra {
 		while($tries-- > 0) {
 			$client = $this->getClient();
 			$try++;
-			
+
+            /* log the action we are about to take */
+            if(Cassandra::isProfiler())
+			    $actionKey = CassandraProfiler::addAction($client, $methodName, $try, $args);
 			try {
-                return call_user_func_array(array($client, $methodName), $args);
+
+                /* call the function */
+                $return = call_user_func_array(array($client, $methodName), $args);
+
+                /* end the action */
+                if(Cassandra::isProfiler())
+                    CassandraProfiler::endAction($actionKey);
+
+                /* return the result */
+                return $return;
             } catch (Exception $e) {
 				$lastException = $e;
-				
+
+                /* store the profile end time and error status for this call */
+                if(Cassandra::isProfiler())
+                    CassandraProfiler::endAction($actionKey, 1, $e);
+
 				usleep(0.1 * pow(2, $try) * 1000000);
 			}
 		}
 
+        $exceptionExtra = '';
+        if(Cassandra::isProfiler())
+            $exceptionExtra = '<br /><pre>'.print_r(CassandraProfiler::getActions(), true).'</pre>';
+
 		throw new CassandraMaxRetriesException(
 			'Failed calling "'.$methodName.'" the maximum of '.
-			$this->maxCallRetries.' times',
+			$this->maxCallRetries.' times'.$exceptionExtra,
 			$lastException->getCode(),
 			$lastException
 		);
@@ -1188,7 +1234,7 @@ class Cassandra {
         $request,
         $consistency = null
     ) {
-        $consistency = CassandraUtil::CheckConsistency($consistency);
+        $consistency = CassandraUtil::checkConsistency($consistency);
 
 		$details = $this->parseRequest($request);
 
@@ -1223,7 +1269,7 @@ class Cassandra {
         array $columns,
         $consistency = null
     ) {
-        $consistency = CassandraUtil::CheckConsistency($consistency);
+        $consistency = CassandraUtil::checkConsistency($consistency);
 
 		$dotPosition = mb_strpos($key, '.');
 		
@@ -1512,8 +1558,7 @@ class Cassandra {
 		$memtableFlushAfterOpsMillions = null
 	) {
         if(!is_string($keyspace))
-
-		$columnMetadata = null;
+            $columnMetadata = null;
 		
 		if (!empty($columns)) {
 			$columnMetadata = array();
@@ -1948,7 +1993,7 @@ class CassandraColumnFamily {
         $superColumn = null,
         $consistency = null
     ) {
-        $consistency = CassandraUtil::CheckConsistency($consistency);
+        $consistency = CassandraUtil::checkConsistency($consistency);
 
         if(!is_null($superColumn) && !is_string($superColumn))
             $superColumn = null;
@@ -1984,7 +2029,7 @@ class CassandraColumnFamily {
 		$superColumn = null,
 		$consistency = null
 	) {
-        $consistency = CassandraUtil::CheckConsistency($consistency);
+        $consistency = CassandraUtil::checkConsistency($consistency);
 
         if(!is_null($superColumn) && !is_string($superColumn))
             $superColumn = null;
@@ -2027,7 +2072,7 @@ class CassandraColumnFamily {
 		$columnCount = 100,
 		$consistency = null
 	) {
-        $consistency = CassandraUtil::CheckConsistency($consistency);
+        $consistency = CassandraUtil::checkConsistency($consistency);
 
         if(!is_null($superColumn) && !is_string($superColumn))
             $superColumn = null;
@@ -2104,7 +2149,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = CassandraUtil::CheckConsistency($consistency);
+            $consistency = CassandraUtil::checkConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2203,7 +2248,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = CassandraUtil::CheckConsistency($consistency);
+            $consistency = CassandraUtil::checkConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2296,7 +2341,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = CassandraUtil::CheckConsistency($consistency);
+            $consistency = CassandraUtil::checkConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2415,7 +2460,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = CassandraUtil::CheckConsistency($consistency);
+            $consistency = CassandraUtil::checkConsistency($consistency);
         }
 
         if(!is_bool($columnsReversed))
@@ -2491,7 +2536,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = CassandraUtil::CheckConsistency($consistency);
+            $consistency = CassandraUtil::checkConsistency($consistency);
         }
 		
 		$columnParent = $this->createColumnParent($superColumn);
@@ -2550,7 +2595,7 @@ class CassandraColumnFamily {
 		if ($consistency === null) {
 			$consistency = $this->defaultReadConsistency;
 		} else {
-            $consistency = CassandraUtil::CheckConsistency($consistency);
+            $consistency = CassandraUtil::checkConsistency($consistency);
         }
         
 		$columnParent = $this->createColumnParent($superColumn);
@@ -3327,13 +3372,13 @@ class CassandraUtil {
     }
 
 	/**
-	 * Returns current timestamp that can be used in insert/update opearations.
-	 * 
-	 * By Zach Buller (zachbuller@gmail.com)
-	 * 
-	 * @return integer Unpacked data
-	 */
-	public function getTimestamp() {
+     * Returns current timestamp that can be used in insert/update operations.
+     *
+     * @static
+     * @return float
+     */
+
+	public static function getTimestamp() {
         $microtime = microtime();
 		
         settype($microtime, 'string');
@@ -3799,6 +3844,149 @@ class CassandraRangeDataIterator extends CassandraDataIterator {
 		$this->buffer = $this->columnFamily->parseSlicesResponse($result);
 		$this->currentPageSize = count($this->buffer);
 	}
+}
+
+class CassandraProfiler {
+    private static $action = array();
+    private static $storeParams = true;
+    private static $storeClient = true;
+
+    /**
+     * The client object can be very repetitive, maybe we don't want to store it to clean up the data
+     * 
+     * @static
+     * @param null $swt
+     * @return bool
+     */
+    public static function isStoreClient($swt = null)
+    {
+        if(is_bool($swt) && !is_null($swt))
+            CassandraProfiler::$storeClient = $swt;
+
+        return CassandraProfiler::$storeClient;
+    }
+
+    /**
+     * The params array can be very large at times and very repetitive, maybe we don't want to
+     * store it to clean up the data
+     *
+     * @static
+     * @param null $swt
+     * @return bool
+     */
+    public static function isStoreParams($swt = null)
+    {
+        if(is_bool($swt) && !is_null($swt))
+            CassandraProfiler::$storeParams = $swt;
+
+        return CassandraProfiler::$storeParams;
+    }
+
+    /**
+     * Add a new action to the profiler
+     *
+     * @static
+     * @param $client
+     * @param $action
+     * @param $try
+     * @param $params
+     * @return string
+     */
+    public static function addAction(
+        $client,
+        $action,
+        $try,
+        $params
+    ){
+        $startTime = microtime(true);
+        $key = md5($action.$startTime);
+        CassandraProfiler::$action[$key] = array(
+            'action' => $action,
+            'try_num' => $try, 
+            'start_time' => $startTime,
+        );
+
+        if(CassandraProfiler::isStoreClient())
+            CassandraProfiler::$action[$key]['client'] = $client;
+
+        if(CassandraProfiler::isStoreParams())
+            CassandraProfiler::$action[$key]['params'] = $params;
+
+        return $key;
+    }
+
+    /**
+     * End the action and calculate the duration
+     *
+     * @static
+     * @param $key
+     * @param int $failure
+     * @param bool $exception
+     * @return void
+     */
+    public static function endAction(
+        $key,
+        $failure = 0,
+        $exception = false
+    ){
+        if(!$key || !isset(CassandraProfiler::$action[$key]))
+            $key = key(end(CassandraProfiler::$action));
+
+        $endTime = microtime(true);
+
+        CassandraProfiler::$action[$key]['failure'] = $failure;
+
+        if($exception)
+            CassandraProfiler::$action[$key]['exception'] = $exception;
+
+        CassandraProfiler::$action[$key]['end_time'] = $endTime;
+        CassandraProfiler::$action[$key]['duration_in_sec'] =
+            $endTime - CassandraProfiler::$action[$key]['start_time'];
+    }
+
+    /**
+     * Get the profile for this script run
+     * 
+     * @static
+     * @param bool $simple Only show the summary data
+     * @return array
+     */
+    public static function getActions($simple = false)
+    {
+        $stats = array('summary' => array());
+        $stats['summary']['database_calls'] = count(CassandraProfiler::$action);
+        $stats['summary']['total_query_duration_in_sec'] = 0;
+        $stats['summary']['query_duration_average_in_sec'] = 0;
+        $stats['summary']['query_try_average'] = 0;
+        $stats['summary']['query_failure_average'] = 0;
+        
+        $durationAverage = $triesAverage = $failureAverage = array();
+        foreach(CassandraProfiler::$action as $item)
+        {
+            if(isset($item['duration_in_sec']))
+            {
+                $stats['summary']['total_query_duration_in_sec'] += $item['duration_in_sec'];
+                $durationAverage[] = $item['duration_in_sec'];
+                $failureAverage[] = $item['failure'];
+            }
+
+            $triesAverage[] = $item['try_num'];
+        }
+
+        if(count($durationAverage) > 0)
+            $stats['summary']['query_duration_average_in_sec'] = array_sum($durationAverage) / count($durationAverage);
+
+        if(count($triesAverage) > 0)
+            $stats['summary']['query_try_average'] = array_sum($triesAverage) / count($triesAverage);
+
+        if(count($failureAverage) > 0)
+            $stats['summary']['query_failure_average'] = array_sum($failureAverage) / count($failureAverage);
+
+        if($simple)
+            return $stats;
+
+        return array_merge($stats, CassandraProfiler::$action);
+    }
 }
 
 /**
