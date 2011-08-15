@@ -1315,7 +1315,12 @@ class Cassandra {
 	 * @return boolean Was dropping successful
 	 * @throws Exception If anything goes wrong
 	 */
-	public function dropKeyspace($name) {
+	public function dropKeyspace(
+        $name
+    ){
+        if(!trim($name))
+            throw new CassandraInvalidRequestException('You must provide a valid keyspace name');
+        
 		return $this->call('system_drop_keyspace', $name);
 	}
 	
@@ -1506,6 +1511,8 @@ class Cassandra {
 		$memtableFlushAfterThroughputMb = null,
 		$memtableFlushAfterOpsMillions = null
 	) {
+        if(!is_string($keyspace))
+
 		$columnMetadata = null;
 		
 		if (!empty($columns)) {
