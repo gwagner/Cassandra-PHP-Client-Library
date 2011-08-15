@@ -854,7 +854,7 @@ class Cassandra {
 
     public static function isProfiler($swt = null)
     {
-        if(is_bool($swt))
+        if(is_bool($swt) && !is_null($swt))
             Cassandra::$profiler = $swt;
 
         return Cassandra::$profiler;

@@ -14,6 +14,7 @@ Features:
 - retries failed queries using back-off strategy
 - built with performance in mind (caches schema description etc)
 - well documented API and a working example
+- query profiler to test performance of calls to cassandra
 
 The class diagram is available on the wiki, see:
 https://github.com/kallaspriit/Cassandra-PHP-Client-Library/wiki
@@ -48,6 +49,18 @@ $servers = array(
 // create a named singleton, the second parameter name defaults to "main"
 // you can have several named singletons with different server pools
 $cassandra = Cassandra::createInstance($servers);
+
+// start the query profiler
+Cassandra::isProfiler(true);
+
+//To save on ram, you can trim down the profile data you store
+//by using the flags below
+
+//Skip storing the client data
+//CassandraProfiler::isStoreClient(false);
+
+//Skip storing the param data
+//CassandraProfiler::isStoreParams(false);
 
 // at any point in code, you can get the named singleton instance, the name
 // again defaults to "main" so no need to define it if using single instance
@@ -264,6 +277,12 @@ echo 'Super-column cities.Estonia.Tartu: <pre>'.print_r($tartu, true).'</pre><hr
 // we can still use the additional filters of columns
 $tallinn = $cassandra->get('cities.Estonia.Tallinn:population,size');
 echo 'Super-column cities.Estonia.Tallinn: <pre>'.print_r($tallinn, true).'</pre><hr/>';
+
+// Get the full profiler data
+echo 'Full Query Profiler Dump: <pre>'.print_r(CassandraProfiler::getActions(), true).'</pre><hr/>';
+
+// Get the profiler summary data
+echo 'Full Query Profiler Dump: <pre>'.print_r(CassandraProfiler::getActions(true), true).'</pre><hr/>';
 
 // you can delete all the data in a column family using "truncate"
 $cassandra->truncate('user');
