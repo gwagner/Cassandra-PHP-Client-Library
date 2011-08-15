@@ -2312,15 +2312,13 @@ class CassandraColumnFamily {
 		for ($i = 0; $i < $setCount; $i++) {
 			$setKeys = array_slice($keys, $i * $bufferSize, $bufferSize);
 			
-			$setResponse = $this->cassandra->call(
+			$responses += $this->cassandra->call(
 				'multiget_slice',
 				$setKeys,
 				$columnParent,
 				$slicePredicate,
 				$consistency
 			);
-
-			$responses = array_merge($responses, $setResponse);
 		}
 
 		foreach ($responses as $key => $response) {
@@ -2947,10 +2945,7 @@ class CassandraColumnFamily {
 			$results[$key] = array();
 			
 			foreach ($row->columns as $row) {
-				$results[$key] = array_merge(
-					$results[$key],
-					$this->parseSliceRow($row)
-				);
+				$results[$key] += $this->parseSliceRow($row);
 			}
 		}
 		
@@ -2970,10 +2965,7 @@ class CassandraColumnFamily {
 		$results = array();
 		
 		foreach ($response as $row) {
-			$results = array_merge(
-				$results,
-				$this->parseSliceRow($row)
-			);
+			$results += $this->parseSliceRow($row);
 		}
 		
 		return $results;
@@ -3283,7 +3275,7 @@ class CassandraUtil {
 	 * @return string Unpacked data
 	 */
 	public static function unpackString($value, $length) {
-		$unpacked = unpack('c'.$length.'chars', $value);
+		$unpacked = unpack('C'.$length.'chars', $value);
         $out = '';
 		
         foreach($unpacked as $element) {
